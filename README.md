@@ -1,7 +1,7 @@
 
 
 <div align="center">
-  <img src="logo_v1.png" alt="Klaud Logo" width="200">
+  <img src="app/src/main/res/drawable/logo_v1.png" alt="Klaud Logo" width="200">
 </div>
 
 **Klaud** (from German *Wolke* — cloud) is a decentralized, serverless file sync app
