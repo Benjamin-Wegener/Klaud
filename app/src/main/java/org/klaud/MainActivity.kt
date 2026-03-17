@@ -21,6 +21,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.klaud.databinding.ActivityMainBinding
+import org.klaud.onion.TorHiddenService
 import org.klaud.onion.TorManager
 import org.klaud.ui.FileListFragment
 import org.klaud.ui.QRScannerActivity
@@ -46,10 +47,8 @@ class MainActivity : AppCompatActivity() {
                 qrData?.let { raw ->
                     Log.d("MainActivity", "Received QR broadcast: $raw")
                     
-                    // Versuche erst das Klaud-V1 Format (Separator-basiert)
                     var pairData = QRCodeUtils.parseTorDeviceQRData(raw)
                     
-                    // Fallback: Wenn es JSON ist (von unserem Test-Script)
                     if (pairData == null && raw.trim().startsWith("{")) {
                         try {
                             val map = gson.fromJson(raw, Map::class.java)
@@ -77,6 +76,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Ensure Tor service is started when UI is visible (Android 14 safe)
+        val torIntent = Intent(this, TorHiddenService::class.java)
+        startForegroundService(torIntent)
+
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 

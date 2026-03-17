@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
 import android.util.Log
+import androidx.work.Configuration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -14,10 +15,15 @@ import org.klaud.crypto.KyberKeyManager
 import org.klaud.onion.TorHiddenService
 import org.klaud.onion.TorManager
 
-class KlaudApplication : Application() {
+class KlaudApplication : Application(), Configuration.Provider {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var deviceStatusMonitor: DeviceStatusMonitor? = null
+
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setMinimumLoggingLevel(Log.INFO)
+            .build()
 
     override fun onCreate() {
         super.onCreate()
@@ -33,11 +39,13 @@ class KlaudApplication : Application() {
     private fun startTorService() {
         try {
             val intent = Intent(this, TorHiddenService::class.java)
-            startForegroundService(intent)
+            // We bind the service here. On Android 14, starting a foreground service from 
+            // Application.onCreate can fail if the app is started from the background.
+            // BootReceiver now uses TorStartWorker to handle this safely on boot.
             bindService(intent, torServiceConnection, BIND_AUTO_CREATE)
-            Log.i("KlaudApplication", "TorHiddenService started")
+            Log.i("KlaudApplication", "TorHiddenService bound in Application")
         } catch (e: Exception) {
-            Log.e("KlaudApplication", "Failed to start TorHiddenService", e)
+            Log.e("KlaudApplication", "Failed to bind TorHiddenService", e)
         }
     }
 
@@ -45,7 +53,7 @@ class KlaudApplication : Application() {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val torService = (service as TorHiddenService.LocalBinder).getService()
             TorManager.setService(torService)
-            Log.i("KlaudApplication", "TorHiddenService bound in Application")
+            Log.i("KlaudApplication", "TorHiddenService connected and bound")
 
             if (deviceStatusMonitor == null) {
                 deviceStatusMonitor = DeviceStatusMonitor(TorManager, scope, this@KlaudApplication)
@@ -61,7 +69,7 @@ class KlaudApplication : Application() {
             TorManager.setService(null)
             deviceStatusMonitor?.stop()
             deviceStatusMonitor = null
-            Log.w("KlaudApplication", "TorHiddenService disconnected — restarting")
+            Log.w("KlaudApplication", "TorHiddenService disconnected — re-binding")
             scope.launch {
                 kotlinx.coroutines.delay(3000)
                 startTorService()
