@@ -1,0 +1,54 @@
+package org.foldersync.sync
+
+import android.content.Context
+import android.content.SharedPreferences
+import org.foldersync.onion.PersistentOnionPortStore
+import java.util.*
+
+class OnionServiceManager(private val context: Context) {
+    private val prefs: SharedPreferences = context.getSharedPreferences("onion_service_prefs", Context.MODE_PRIVATE)
+    private val portStore = PersistentOnionPortStore(context)
+    
+    companion object {
+        private const val KEY_ONION_PORT = "onion_port"
+        private const val MIN_PORT = 10001
+        private const val MAX_PORT = 65535
+    }
+    
+    /**
+     * Gets a persistent port for the onion service.
+     * If no port is saved, generates a new random port in the valid range.
+     */
+    fun getPersistentOnionPort(): Int {
+        return portStore.getOrCreate()
+    }
+    
+    /**
+     * Resets the persistent port (for testing or if the port becomes unavailable)
+     */
+    fun resetOnionPort() {
+        portStore.reset()
+    }
+    
+    /**
+     * Checks if a port is available for use
+     */
+    fun isPortAvailable(port: Int): Boolean {
+        try {
+            val socket = java.net.ServerSocket()
+            socket.reuseAddress = true
+            socket.bind(java.net.InetSocketAddress(port))
+            socket.close()
+            return true
+        } catch (e: java.io.IOException) {
+            return false
+        }
+    }
+    
+    /**
+     * Gets an available port, either the persistent one or a new one if the persistent is unavailable
+     */
+    fun getAvailableOnionPort(): Int {
+        return portStore.getOrCreateAvailablePort()
+    }
+}
