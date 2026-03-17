@@ -18,9 +18,11 @@ import org.klaud.FileSyncService
 import org.klaud.R
 import org.klaud.crypto.KyberKeyManager
 import java.io.File
+import java.io.FileOutputStream
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.TimeUnit
+import java.util.zip.ZipFile
 
 class TorHiddenService : Service() {
     private val binder = LocalBinder()
@@ -140,7 +142,7 @@ class TorHiddenService : Service() {
 
             val executable = findTorBinary()
             if (executable == null) {
-                broadcastLog("[TOR ERROR] Could not find Tor binary in native library path")
+                broadcastLog("[TOR ERROR] Could not find or extract Tor binary")
                 return@withContext
             }
 
@@ -198,10 +200,40 @@ class TorHiddenService : Service() {
         for (name in names) {
             val f = File(nativeLibDir, name)
             if (f.exists()) {
-                broadcastLog("Found Tor binary at: ${f.absolutePath}")
+                broadcastLog("Found Tor binary at native path: ${f.absolutePath}")
                 return f
             }
         }
+        
+        // Manual extraction if not found in native library dir (common when extractNativeLibs=false)
+        val extractedTor = File(torDataDir, "tor_bin")
+        if (extractedTor.exists()) {
+            extractedTor.setExecutable(true)
+            return extractedTor
+        }
+
+        try {
+            val abi = android.os.Build.SUPPORTED_ABIS[0]
+            val zipEntryName = "lib/$abi/libtor.so"
+            val apkFile = File(applicationInfo.sourceDir)
+            
+            ZipFile(apkFile).use { zip ->
+                val entry = zip.getEntry(zipEntryName)
+                if (entry != null) {
+                    zip.getInputStream(entry).use { input ->
+                        FileOutputStream(extractedTor).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    extractedTor.setExecutable(true)
+                    broadcastLog("Extracted Tor binary to: ${extractedTor.absolutePath}")
+                    return extractedTor
+                }
+            }
+        } catch (e: Exception) {
+            broadcastLog("[TOR ERROR] Failed to extract Tor binary: ${e.message}")
+        }
+        
         return null
     }
 
@@ -215,7 +247,7 @@ class TorHiddenService : Service() {
                 }
                 .redirectErrorStream(true)
                 .start()
-            Log.i(TAG, "Tor process started from native libs")
+            Log.i(TAG, "Tor process started")
         } catch (e: Exception) {
             broadcastLog("[TOR ERROR] ProcessBuilder failed: ${e.message}")
         }

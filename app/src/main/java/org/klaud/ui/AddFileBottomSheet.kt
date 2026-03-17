@@ -15,6 +15,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import org.klaud.FileRepository
+import org.klaud.SyncManager
 import org.klaud.databinding.BottomSheetAddFileBinding
 import java.io.File
 import java.io.FileOutputStream
@@ -93,6 +94,7 @@ class AddFileBottomSheet : BottomSheetDialogFragment() {
                     input.copyTo(output)
                 }
             }
+            SyncManager.triggerFileSync(requireContext(), FileRepository.getRelativePath(destFile), destFile)
             (parentFragment as? FileListFragment)?.refreshList()
         } catch (e: Exception) {
             Log.e("AddFileBottomSheet", "Error copying file", e)

@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
@@ -12,7 +11,6 @@ import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
@@ -85,6 +83,8 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         setSupportActionBar(binding.toolbar)
+        // Explicitly hide the title text
+        supportActionBar?.setDisplayShowTitleEnabled(false)
 
         if (savedInstanceState == null) {
             supportFragmentManager.beginTransaction()
@@ -124,22 +124,12 @@ class MainActivity : AppCompatActivity() {
                 val isRunning = TorManager.isTorRunning() && onion != null
                 
                 withContext(Dispatchers.Main) {
-                    if (isRunning) {
-                        binding.torStatusDot.backgroundTintList =
-                            ColorStateList.valueOf(ContextCompat.getColor(this@MainActivity, R.color.klaud_tor_connected))
-                        binding.torStatusText.text = "Tor Connected · ${onion!!.take(10)}…"
-                        
-                        if (BuildConfig.DEBUG) {
-                            try {
-                                val clazz = Class.forName("org.klaud.debug.PairingExport")
-                                val method = clazz.getDeclaredMethod("exportPairingData", Context::class.java)
-                                method.invoke(null, this@MainActivity)
-                            } catch (e: Exception) {}
-                        }
-                    } else {
-                        binding.torStatusDot.backgroundTintList =
-                            ColorStateList.valueOf(ContextCompat.getColor(this@MainActivity, R.color.klaud_tor_connecting))
-                        binding.torStatusText.text = "Connecting to Tor…"
+                    if (isRunning && BuildConfig.DEBUG) {
+                        try {
+                            val clazz = Class.forName("org.klaud.debug.PairingExport")
+                            val method = clazz.getDeclaredMethod("exportPairingData", Context::class.java)
+                            method.invoke(null, this@MainActivity)
+                        } catch (e: Exception) {}
                     }
 
                     binding.fabAdd.isEnabled = true
@@ -203,6 +193,7 @@ class MainActivity : AppCompatActivity() {
                     input.copyTo(output)
                 }
             }
+            SyncManager.triggerFileSync(this, FileRepository.getRelativePath(destFile), destFile)
             fragment?.refreshList()
         } catch (e: Exception) {
             e.printStackTrace()

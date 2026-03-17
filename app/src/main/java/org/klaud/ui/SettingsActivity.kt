@@ -1,5 +1,6 @@
 package org.klaud.ui
 
+import android.content.Context
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
@@ -91,6 +92,18 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
         root.addView(syncNowBtn)
+
+        // Tor Refresh Button
+        val refreshTorBtn = Button(this).apply {
+            text = "Refresh Tor Connection"
+            setOnClickListener {
+                org.klaud.onion.TorManager.stopTor(this@SettingsActivity)
+                Toast.makeText(this@SettingsActivity, "Restarting Tor...", Toast.LENGTH_SHORT).show()
+                val torIntent = android.content.Intent(this@SettingsActivity, org.klaud.onion.TorHiddenService::class.java)
+                startForegroundService(torIntent)
+            }
+        }
+        root.addView(refreshTorBtn)
 
         root.addView(TextView(this).apply {
             text = "Connected Devices"
@@ -205,7 +218,7 @@ class SettingsActivity : AppCompatActivity() {
 
         override fun getItemCount() = devices.size
 
-        class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        class ViewHolder(view: View) : ViewHolderBase(view) {
             val nameText: TextView = TextView(view.context).apply { textSize = 16f; setTypeface(null, android.graphics.Typeface.BOLD) }
             val addressText: TextView = TextView(view.context).apply { textSize = 12f; setTextColor(0xFF666666.toInt()) }
             val statusText: TextView = TextView(view.context).apply { textSize = 12f }
@@ -222,3 +235,5 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 }
+
+open class ViewHolderBase(view: View) : RecyclerView.ViewHolder(view)

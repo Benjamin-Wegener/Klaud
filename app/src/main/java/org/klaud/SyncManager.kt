@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.*
 import org.klaud.onion.TorManager
+import java.io.File
 
 object SyncManager {
     private const val TAG = "SyncManager"
@@ -48,6 +49,52 @@ object SyncManager {
                         } else {
                             DeviceManager.updateOnlineStatus(device.id, true)
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    fun triggerFileSync(context: Context, relativePath: String, file: File) {
+        scope.launch {
+            val socksPort = TorManager.getSocksPort() ?: return@launch
+            val allDevices = DeviceManager.getAllDevices()
+            
+            allDevices.forEach { device ->
+                launch {
+                    val success = FileSyncService.sendFileToOnion(
+                        onionAddress = device.onionAddress,
+                        port = device.port,
+                        relativePath = relativePath,
+                        file = file,
+                        socksPort = socksPort,
+                        context = context
+                    )
+                    if (!success) {
+                        PendingRelayQueue.add(device.id, relativePath)
+                    }
+                }
+            }
+        }
+    }
+
+    fun triggerFileDeletion(context: Context, relativePath: String) {
+        scope.launch {
+            val socksPort = TorManager.getSocksPort() ?: return@launch
+            val allDevices = DeviceManager.getAllDevices()
+            
+            allDevices.forEach { device ->
+                launch {
+                    val success = FileSyncService.sendDeletionToOnion(
+                        onionAddress = device.onionAddress,
+                        port = device.port,
+                        relativePath = relativePath,
+                        socksPort = socksPort,
+                        context = context
+                    )
+                    if (!success) {
+                        // We might need a deletion queue as well, but for now we just log
+                        Log.w(TAG, "Failed to send deletion for $relativePath to ${device.name}")
                     }
                 }
             }

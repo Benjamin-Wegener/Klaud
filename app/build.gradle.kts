@@ -55,6 +55,8 @@ android {
             )
         }
         jniLibs {
+            // Must be true to allow ProcessBuilder to run Tor from the nativeLibraryDir.
+            // When true, libs are compressed in APK and extracted/aligned at install time.
             useLegacyPackaging = true
         }
     }

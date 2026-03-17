@@ -6,6 +6,8 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
@@ -15,6 +17,7 @@ import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import org.klaud.FileRepository
 import org.klaud.R
+import org.klaud.SyncManager
 import org.klaud.databinding.FragmentFileListBinding
 import java.io.File
 
@@ -128,8 +131,17 @@ class FileListFragment : Fragment() {
             .setPositiveButton("Rename") { _, _ ->
                 val newName = input.text.toString()
                 if (newName.isNotEmpty() && newName != syncFile.file.name) {
-                    FileRepository.renameFile(syncFile.relativePath, newName)
-                    refreshList()
+                    val oldPath = syncFile.relativePath
+                    if (FileRepository.renameFile(oldPath, newName)) {
+                        val newFile = File(syncFile.file.parentFile, newName)
+                        val newPath = FileRepository.getRelativePath(newFile)
+                        
+                        // First notify remote of deletion of old name, then sync new name
+                        SyncManager.triggerFileDeletion(requireContext(), oldPath)
+                        SyncManager.triggerFileSync(requireContext(), newPath, newFile)
+                        
+                        refreshList()
+                    }
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -141,8 +153,11 @@ class FileListFragment : Fragment() {
             .setTitle("Delete")
             .setMessage("Are you sure you want to delete ${syncFile.file.name}?")
             .setPositiveButton("Delete") { _, _ ->
-                FileRepository.deleteFile(syncFile.relativePath)
-                refreshList()
+                val pathToDelete = syncFile.relativePath
+                if (FileRepository.deleteFile(pathToDelete)) {
+                    SyncManager.triggerFileDeletion(requireContext(), pathToDelete)
+                    refreshList()
+                }
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -164,7 +179,7 @@ class FileListFragment : Fragment() {
         val relativePath = currentDir.absolutePath.removePrefix(root.absolutePath)
         val parts = relativePath.split(File.separator).filter { it.isNotEmpty() }
 
-        addBreadcrumb("Klaud", root)
+        addHomeBreadcrumb(root)
 
         var currentPath = root
         for (part in parts) {
@@ -173,6 +188,16 @@ class FileListFragment : Fragment() {
             addBreadcrumb(" > ", null)
             addBreadcrumb(part, dir)
         }
+    }
+
+    private fun addHomeBreadcrumb(dir: File) {
+        val homeIcon = ImageView(requireContext()).apply {
+            setImageResource(R.drawable.ic_home)
+            layoutParams = LinearLayout.LayoutParams(96, 96) // 48dp * 2
+            setPadding(8, 8, 8, 8)
+            setOnClickListener { navigateToDir(dir) }
+        }
+        binding.breadcrumbContainer.addView(homeIcon)
     }
 
     private fun addBreadcrumb(text: String, dir: File?) {
