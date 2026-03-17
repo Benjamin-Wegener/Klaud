@@ -1,118 +1,116 @@
 #!/bin/bash
 set -e
 
-# Versuche Android SDK Pfad automatisch zu finden
+# 1. SDK Pfad auflösen
 export ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}
+echo "--- Klaud Environment Setup ---"
+echo "Using SDK: $ANDROID_SDK_ROOT"
+
 if [ ! -d "$ANDROID_SDK_ROOT" ]; then
-    # Suche in typischen Pfaden
-    PATHS=("/opt/android-sdk" "/usr/lib/android-sdk" "$HOME/Library/Android/sdk")
-    for P in "${PATHS[@]}"; do
-        if [ -d "$P" ]; then export ANDROID_SDK_ROOT="$P"; break; fi
-    done
+    echo "ERROR: SDK directory not found at $ANDROID_SDK_ROOT"
+    exit 1
 fi
 
-# Suche dynamisch nach den Binaries
-find_binary() {
-    local name=$1
-    local found=$(find "$ANDROID_SDK_ROOT" -name "$name" -type f -executable 2>/dev/null | head -n 1)
-    if [ -z "$found" ]; then
-        # Check PATH as fallback
-        if command -v "$name" &> /dev/null; then
-            echo "$name"
-        else
-            return 1
-        fi
-    else
+# 2. Suche nach Binaries
+find_it() {
+    local name="$1"
+    # Suche im SDK (ohne -type f, falls es ein Symlink ist)
+    local found=$(find "$ANDROID_SDK_ROOT" -name "$name" 2>/dev/null | grep -v "sdk-patch" | head -n 1)
+    if [ -n "$found" ]; then
         echo "$found"
+        return 0
     fi
+    # Check current PATH
+    if command -v "$name" > /dev/null 2>&1; then
+        command -v "$name"
+        return 0
+    fi
+    return 1
 }
 
-ADB=$(find_binary adb) || { echo "ERROR: adb not found"; exit 1; }
-EMULATOR=$(find_binary emulator) || { echo "ERROR: emulator not found"; exit 1; }
-AVDMANAGER=$(find_binary avdmanager) || { echo "ERROR: avdmanager not found"; exit 1; }
+AVDMANAGER=$(find_it avdmanager) || {
+    echo "ERROR: avdmanager not found."
+    echo "Versuche: ls -R $ANDROID_SDK_ROOT | grep avdmanager"
+    exit 1
+}
+ADB=$(find_it adb) || { echo "ERROR: adb not found"; exit 1; }
+EMULATOR=$(find_it emulator) || { echo "ERROR: emulator not found"; exit 1; }
 
-echo "Using Binaries:"
+echo "Executables found:"
 echo "  ADB: $ADB"
-echo "  EMULATOR: $EMULATOR"
-echo "  AVDMANAGER: $AVDMANAGER"
+echo "  AVD: $AVDMANAGER"
+echo "  EMU: $EMULATOR"
 
-# AVDs erstellen
+# 3. AVD Setup
+echo "Preparing AVDs..."
 for i in 1 2 3; do
-    "$AVDMANAGER" create avd -n klaud_test_$i \
-        -k "system-images;android-34;google_apis;x86_64" --force <<< "no"
+    "$AVDMANAGER" create avd -n klaud_test_$i -k "system-images;android-34;google_apis;x86_64" --force <<< "no" || true
 done
 
-# Headless starten
+# 4. Launch Emulators
+echo "Launching Emulators (headless)..."
 for i in 1 2 3; do
-    "$EMULATOR" -avd klaud_test_$i -no-window -no-audio \
-        -no-boot-anim -gpu swiftshader_indirect &
+    "$EMULATOR" -avd klaud_test_$i -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect > /dev/null 2>&1 &
 done
 
-# Boot abwarten
-echo "Waiting for emulators to boot..."
+# 5. Wait for Boot
+echo "Waiting for devices to appear..."
 sleep 15
 SERIALS=($("$ADB" devices | grep emulator | awk '{print $1}'))
+
+if [ ${#SERIALS[@]} -eq 0 ]; then
+    echo "ERROR: No emulators started. Check if 'system-images;android-34;google_apis;x86_64' is installed."
+    exit 1
+fi
+
 for S in "${SERIALS[@]}"; do
-    until "$ADB" -s $S shell getprop sys.boot_completed | grep -q 1; do sleep 5; done
-    echo "$S ready"
+    echo "Waiting for $S to finish booting..."
+    count=0
+    until "$ADB" -s $S shell getprop sys.boot_completed | grep -q 1 || [ $count -gt 40 ]; do
+        sleep 5
+        count=$((count+1))
+    done
+    echo "Device $S ready."
 done
 
-# Bauen & installieren
+# 6. Build & Deploy
+echo "Building APKs..."
 ./gradlew assembleDebug assembleAndroidTest
+
 for S in "${SERIALS[@]}"; do
+    echo "Installing on $S..."
     "$ADB" -s $S install -r app/build/outputs/apk/debug/app-debug.apk
     "$ADB" -s $S install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-    "$ADB" -s $S shell pm grant org.klaud android.permission.READ_EXTERNAL_STORAGE || true
-    "$ADB" -s $S shell pm grant org.klaud android.permission.WRITE_EXTERNAL_STORAGE || true
 done
 
-# App starten (damit pairing.json geschrieben wird)
+# 7. Pairing & Tests
+echo "Running pairing sequence..."
 for S in "${SERIALS[@]}"; do
     "$ADB" -s $S shell am start -n org.klaud/.MainActivity
 done
-sleep 6
+sleep 8
 
-# QR Pairing via Datei-Austausch
 PKG="org.klaud"
-DEVICE_PATH="/sdcard/Android/data/$PKG/files/pairing.json"
+FILE="/sdcard/Android/data/$PKG/files/pairing.json"
 for SENDER in "${SERIALS[@]}"; do
-    # Warte kurz falls Datei noch nicht geschrieben
-    MAX_RETRIES=10
-    RETRY=0
-    until "$ADB" -s $SENDER shell ls $DEVICE_PATH &> /dev/null || [ $RETRY -eq $MAX_RETRIES ]; do
-        sleep 2
-        let RETRY=RETRY+1
-    done
-
-    DATA=$("$ADB" -s $SENDER shell cat $DEVICE_PATH)
-    for RECEIVER in "${SERIALS[@]}"; do
-        [ "$SENDER" = "$RECEIVER" ] && continue
-        "$ADB" -s $RECEIVER shell am broadcast \
-            -a org.klaud.QR_SCANNED \
-            --es qr_data "$DATA"
-    done
-done
-echo "Pairing complete."
-sleep 3
-
-# Tests parallel ausführen
-mkdir -p test_results
-RUNNER="org.klaud.test/androidx.test.runner.AndroidJUnitRunner"
-for i in 0 1 2; do
-    if [ ! -z "${SERIALS[$i]}" ]; then
-        "$ADB" -s ${SERIALS[$i]} shell am instrument -w $RUNNER \
-            > test_results/emu$i.txt 2>&1 &
+    if "$ADB" -s $SENDER shell ls "$FILE" &> /dev/null; then
+        DATA=$("$ADB" -s $SENDER shell cat "$FILE")
+        for RECEIVER in "${SERIALS[@]}"; do
+            [ "$SENDER" = "$RECEIVER" ] && continue
+            "$ADB" -s $RECEIVER shell am broadcast -a org.klaud.QR_SCANNED --es qr_data "$DATA"
+        done
     fi
+done
+
+echo "Starting instrumented tests..."
+mkdir -p test_results
+for i in "${!SERIALS[@]}"; do
+    "$ADB" -s "${SERIALS[$i]}" shell am instrument -w org.klaud.test/androidx.test.runner.AndroidJUnitRunner > test_results/emu$i.txt 2>&1 &
 done
 wait
 
-# Ergebnisse ausgeben
-for i in 0 1 2; do
-    if [ -f "test_results/emu$i.txt" ]; then
-        echo "=== EMU $((i+1)) (${SERIALS[$i]}) ===" && cat test_results/emu$i.txt
-    fi
+echo "--- FINAL RESULTS ---"
+for i in "${!SERIALS[@]}"; do
+    echo "EMU $((i+1)): $(grep -E "OK|FAILURES" test_results/emu$i.txt || echo "Crash/Error")"
 done
-
-# Cleanup
-# for S in "${SERIALS[@]}"; do "$ADB" -s $S emu kill; done
-echo "Tests finished."
+echo "Test run finished."

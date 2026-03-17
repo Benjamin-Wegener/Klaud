@@ -4,9 +4,12 @@ import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import kotlinx.coroutines.launch
 import org.klaud.DeviceManager
 import org.klaud.ScheduledSyncWorker
 import org.klaud.SyncManager
@@ -103,7 +106,9 @@ class SettingsActivity : AppCompatActivity() {
                 1.0f
             )
         }
-        deviceAdapter = ConnectedDeviceAdapter()
+        deviceAdapter = ConnectedDeviceAdapter { device ->
+            showRemoveDeviceDialog(device)
+        }
         recyclerView.adapter = deviceAdapter
         root.addView(recyclerView)
 
@@ -119,6 +124,20 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
         deviceAdapter.updateDevices(DeviceManager.getAllDevices())
+    }
+
+    private fun showRemoveDeviceDialog(device: org.klaud.Device) {
+        AlertDialog.Builder(this)
+            .setTitle("Remove Device")
+            .setMessage("Are you sure you want to remove '${device.name}'?")
+            .setPositiveButton("Remove") { _, _ ->
+                lifecycleScope.launch {
+                    DeviceManager.removeDevice(device.id)
+                    Toast.makeText(this@SettingsActivity, "Device removed", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     override fun onResume() {
@@ -140,7 +159,9 @@ class SettingsActivity : AppCompatActivity() {
         return true
     }
 
-    private class ConnectedDeviceAdapter : RecyclerView.Adapter<ConnectedDeviceAdapter.ViewHolder>() {
+    private class ConnectedDeviceAdapter(
+        private val onLongClick: (org.klaud.Device) -> Unit
+    ) : RecyclerView.Adapter<ConnectedDeviceAdapter.ViewHolder>() {
         private var devices = listOf<org.klaud.Device>()
         private val dateFormat = SimpleDateFormat("dd.MM HH:mm", Locale.getDefault())
 
@@ -157,6 +178,13 @@ class SettingsActivity : AppCompatActivity() {
                     RecyclerView.LayoutParams.MATCH_PARENT,
                     RecyclerView.LayoutParams.WRAP_CONTENT
                 )
+                isClickable = true
+                isFocusable = true
+                val attrs = intArrayOf(android.R.attr.selectableItemBackground)
+                val typedArray = context.obtainStyledAttributes(attrs)
+                val backgroundResource = typedArray.getResourceId(0, 0)
+                setBackgroundResource(backgroundResource)
+                typedArray.recycle()
             }
             return ViewHolder(layout)
         }
@@ -168,6 +196,11 @@ class SettingsActivity : AppCompatActivity() {
             holder.statusText.text = if (device.isOnline) "ONLINE" else "offline"
             holder.statusText.setTextColor(if (device.isOnline) 0xFF4CAF50.toInt() else 0xFFF44336.toInt())
             holder.lastSeenText.text = "Last seen: ${dateFormat.format(Date(device.lastSeen))}"
+            
+            holder.itemView.setOnLongClickListener {
+                onLongClick(device)
+                true
+            }
         }
 
         override fun getItemCount() = devices.size

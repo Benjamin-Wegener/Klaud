@@ -72,11 +72,7 @@ class FileSyncService : Service() {
             socksPort: Int,
             context: Context
         ): Boolean = withContext(Dispatchers.IO) {
-            if (!DeviceManager.isOnline(onionAddress)) {
-                Log.d(TAG, "Skipping send - device is offline: $onionAddress")
-                return@withContext false
-            }
-
+            // isOnline-Check entfernt: TCP-Verbindung entscheidet selbst ob erreichbar
             var rawSocket: Socket? = null
             var session: CryptoSession? = null
 
@@ -194,7 +190,7 @@ class FileSyncService : Service() {
             socksPort: Int,
             context: Context
         ): Boolean = withContext(Dispatchers.IO) {
-            if (!DeviceManager.isOnline(onionAddress)) return@withContext false
+            // isOnline-Check entfernt: TCP-Verbindung entscheidet selbst
             var rawSocket: Socket? = null
             var session: CryptoSession? = null
             try {

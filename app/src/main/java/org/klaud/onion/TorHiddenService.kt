@@ -8,7 +8,6 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Binder
-import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -17,6 +16,7 @@ import kotlinx.coroutines.*
 import net.freehaven.tor.control.TorControlConnection
 import org.klaud.FileSyncService
 import org.klaud.R
+import org.klaud.crypto.KyberKeyManager
 import java.io.File
 import java.net.ServerSocket
 import java.net.Socket
@@ -155,6 +155,9 @@ class TorHiddenService : Service() {
                 if (confirmSocksPortListening()) {
                     isRunning = true
                     lastSuccessfulConnect = System.currentTimeMillis()
+                    
+                    writePairingJson(onionAddress!!, KyberKeyManager.getPublicKeyHash())
+
                     broadcastLog("Real Tor hidden service ready: $onionAddress:$onionPort")
                     updateNotification("Connected: ${onionAddress?.take(16)}...:$onionPort")
 
@@ -173,6 +176,18 @@ class TorHiddenService : Service() {
             isRunning = false
         } finally {
             isStarting = false
+        }
+    }
+
+    private fun writePairingJson(onion: String, keyHash: String) {
+        if (!onion.endsWith(".onion") || onion == "pending.onion") return
+        try {
+            val json = """{"onion":"$onion","port":$onionPort,"key":"$keyHash"}"""
+            val file = File(getExternalFilesDir(null), "pairing.json")
+            file.writeText(json)
+            Log.i(TAG, "pairing.json written: $onion")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to write pairing.json", e)
         }
     }
 

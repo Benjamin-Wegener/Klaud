@@ -1,7 +1,9 @@
 package org.klaud
 
+import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -18,7 +20,15 @@ class MultiNodeSyncTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         DeviceManager.initialize(context)
         // Clear devices for a clean test state
-        val prefs = context.getSharedPreferences("klauddevices", android.content.Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("klauddevices", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+    }
+
+    @After
+    fun teardown() {
+        // Fake-Geräte nach jedem Test löschen
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val prefs = context.getSharedPreferences("klauddevices", Context.MODE_PRIVATE)
         prefs.edit().clear().commit()
     }
 

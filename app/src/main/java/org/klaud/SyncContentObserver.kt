@@ -119,13 +119,8 @@ class SyncContentObserver(
                 return@forEach
             }
 
-            if (!device.isOnline) {
-                PendingRelayQueue.add(device.id, relativePath)
-                return@forEach
-            }
-
             scope.launch(Dispatchers.IO) {
-                FileSyncService.sendFileToOnion(
+                val success = FileSyncService.sendFileToOnion(
                     onionAddress = device.onionAddress,
                     port = device.port,
                     relativePath = relativePath,
@@ -133,6 +128,9 @@ class SyncContentObserver(
                     socksPort = socksPort,
                     context = context
                 )
+                if (!success) {
+                    PendingRelayQueue.add(device.id, relativePath)
+                }
             }
         }
     }
@@ -147,18 +145,18 @@ class SyncContentObserver(
         val socksPort = torManager.getSocksPort() ?: return
         devices.forEach { device ->
             if (device.onionAddress == excludeOnion) return@forEach
-            if (!device.isOnline) {
-                PendingRelayQueue.addDeletion(device.id, relativePath)
-                return@forEach
-            }
+            
             scope.launch(Dispatchers.IO) {
-                FileSyncService.sendDeletionToOnion(
+                val success = FileSyncService.sendDeletionToOnion(
                     onionAddress = device.onionAddress,
                     port = device.port,
                     relativePath = relativePath,
                     socksPort = socksPort,
                     context = context
                 )
+                if (!success) {
+                    PendingRelayQueue.addDeletion(device.id, relativePath)
+                }
             }
         }
     }
