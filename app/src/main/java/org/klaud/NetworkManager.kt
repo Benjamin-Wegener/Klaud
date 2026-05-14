@@ -2,10 +2,13 @@ package org.klaud
 
 import android.content.Context
 import android.util.Log
+import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.klaud.crypto.HandshakeHandler
+import org.klaud.crypto.KyberKeyManager
 import org.klaud.onion.TorManager
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Proxy
@@ -14,6 +17,8 @@ import java.net.Socket
 object NetworkManager {
     private const val TAG = "NetworkManager"
     private const val DEFAULT_TIMEOUT_MS = 30000
+    private const val FRAME_TYPE_PAIRING_REQ: Byte = 0x07
+    private val gson = Gson()
 
     private fun getActiveSocksPort(): Int {
         return TorManager.getSocksPort()
@@ -117,15 +122,45 @@ object NetworkManager {
         onionAddress: String,
         port: Int,
         expectedPubKeyHash: String,
-        deviceName: String
+        deviceName: String,
+        pairingToken: String
     ): PairingResult = withContext(Dispatchers.IO) {
         val socksPort = TorManager.getSocksPort()
             ?: return@withContext PairingResult.Error("Tor not ready")
+        if (expectedPubKeyHash.isBlank()) {
+            return@withContext PairingResult.Error("Missing peer public key hash")
+        }
+        if (pairingToken.isBlank()) {
+            return@withContext PairingResult.Error("Missing pairing token")
+        }
+
+        val localOnion = TorManager.getOnionHostname()
+            ?: return@withContext PairingResult.Error("Local onion not ready")
+        val localPort = TorManager.getOnionPort()
+            ?: return@withContext PairingResult.Error("Local onion port not ready")
 
         return@withContext try {
             val socket = connectToOnionAddressSync(onionAddress, port, socksPort = socksPort, timeoutMs = 30_000)
             socket?.use {
-                HandshakeHandler.performClientHandshake(it, expectedPubKeyHash)
+                val session = HandshakeHandler.performClientHandshake(it, expectedPubKeyHash)
+                val pairingRequest = PairingRequest(
+                    onionAddress = localOnion,
+                    port = localPort,
+                    deviceName = android.os.Build.MODEL ?: "Android Device",
+                    publicKeyHash = KyberKeyManager.getPublicKeyHash(),
+                    token = pairingToken
+                )
+                val payload = ByteArrayOutputStream().apply {
+                    write(FRAME_TYPE_PAIRING_REQ.toInt())
+                    write(gson.toJson(pairingRequest).toByteArray())
+                }.toByteArray()
+                session.sendFrame(payload)
+
+                val response = String(session.receiveFrame())
+                session.close()
+                if (response != "OK") {
+                    return@withContext PairingResult.Error(response.ifBlank { "Pairing rejected" })
+                }
 
                 val added = DeviceManager.addDevice(onionAddress, port, deviceName, expectedPubKeyHash)
                 if (added) {

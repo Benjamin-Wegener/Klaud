@@ -15,6 +15,7 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import kotlinx.coroutines.*
 import net.freehaven.tor.control.TorControlConnection
 import org.klaud.FileSyncService
+import org.klaud.PairingTokenManager
 import org.klaud.R
 import org.klaud.crypto.KyberKeyManager
 import java.io.File
@@ -184,7 +185,8 @@ class TorHiddenService : Service() {
     private fun writePairingJson(onion: String, keyHash: String) {
         if (!onion.endsWith(".onion") || onion == "pending.onion") return
         try {
-            val json = """{"onion":"$onion","port":$onionPort,"key":"$keyHash"}"""
+            val token = PairingTokenManager.getOrCreateActiveToken(this)
+            val json = """{"onion":"$onion","port":$onionPort,"key":"$keyHash","token":"${token.token}","expiresAt":${token.expiresAt}}"""
             val file = File(getExternalFilesDir(null), "pairing.json")
             file.writeText(json)
             Log.i(TAG, "pairing.json written: $onion")

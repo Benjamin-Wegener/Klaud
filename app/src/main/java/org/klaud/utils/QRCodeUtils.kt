@@ -11,7 +11,8 @@ import java.util.Hashtable
 
 object QRCodeUtils {
 
-    private const val QR_DATA_PREFIX = "KLAUD_V1"
+    private const val QR_DATA_PREFIX_V1 = "KLAUD_V1"
+    private const val QR_DATA_PREFIX_V2 = "KLAUD_V2"
     private const val QR_DATA_SEPARATOR = ":"
 
     fun generateTorDeviceQRCode(
@@ -19,6 +20,8 @@ object QRCodeUtils {
         port: Int,
         deviceName: String,
         pubKeyHash: String,
+        pairingToken: String? = null,
+        expiresAt: Long? = null,
         size: Int = 500
     ): Bitmap? {
         if (!isValidOnionAddress(onionAddress)) {
@@ -35,28 +38,38 @@ object QRCodeUtils {
         }
 
         val timestamp = System.currentTimeMillis()
-        val qrData = "$QR_DATA_PREFIX$QR_DATA_SEPARATOR$onionAddress$QR_DATA_SEPARATOR$port$QR_DATA_SEPARATOR$cleanDeviceName$QR_DATA_SEPARATOR$timestamp$QR_DATA_SEPARATOR$pubKeyHash"
+        val qrData = if (!pairingToken.isNullOrBlank() && expiresAt != null) {
+            "$QR_DATA_PREFIX_V2$QR_DATA_SEPARATOR$onionAddress$QR_DATA_SEPARATOR$port$QR_DATA_SEPARATOR$cleanDeviceName$QR_DATA_SEPARATOR$timestamp$QR_DATA_SEPARATOR$pubKeyHash$QR_DATA_SEPARATOR$pairingToken$QR_DATA_SEPARATOR$expiresAt"
+        } else {
+            "$QR_DATA_PREFIX_V1$QR_DATA_SEPARATOR$onionAddress$QR_DATA_SEPARATOR$port$QR_DATA_SEPARATOR$cleanDeviceName$QR_DATA_SEPARATOR$timestamp$QR_DATA_SEPARATOR$pubKeyHash"
+        }
 
         return generateQRCode(qrData, size)
     }
 
     fun parseTorDeviceQRData(qrData: String): TorDeviceQRData? {
         try {
-            val parts = qrData.split(QR_DATA_SEPARATOR, limit = 6)
-            
-            if (parts.size < 5 || parts[0] != QR_DATA_PREFIX) {
-                return null
+            val firstPart = qrData.substringBefore(QR_DATA_SEPARATOR)
+            val parts = when (firstPart) {
+                QR_DATA_PREFIX_V2 -> qrData.split(QR_DATA_SEPARATOR, limit = 8)
+                QR_DATA_PREFIX_V1 -> qrData.split(QR_DATA_SEPARATOR, limit = 6)
+                else -> return null
             }
+
+            if (parts.size < 5) return null
 
             val onionAddress = parts[1]
             val port = parts[2].toIntOrNull()
             val deviceName = parts[3]
             val timestamp = parts[4].toLongOrNull()
             val pubKeyHash = if (parts.size >= 6) parts[5] else null
+            val pairingToken = if (firstPart == QR_DATA_PREFIX_V2 && parts.size >= 8) parts[6] else null
+            val expiresAt = if (firstPart == QR_DATA_PREFIX_V2 && parts.size >= 8) parts[7].toLongOrNull() else null
 
             if (!isValidOnionAddress(onionAddress) || 
                 port == null || port !in 1..65535 ||
-                deviceName.isEmpty() || timestamp == null) {
+                deviceName.isEmpty() || timestamp == null ||
+                (firstPart == QR_DATA_PREFIX_V2 && (pairingToken.isNullOrBlank() || expiresAt == null || expiresAt <= System.currentTimeMillis()))) {
                 return null
             }
 
@@ -66,6 +79,8 @@ object QRCodeUtils {
                 deviceName = deviceName,
                 timestamp = timestamp,
                 pubKeyHash = pubKeyHash,
+                pairingToken = pairingToken,
+                expiresAt = expiresAt,
                 qrData = qrData
             )
 
@@ -111,5 +126,7 @@ data class TorDeviceQRData(
     val deviceName: String,
     val timestamp: Long,
     val pubKeyHash: String? = null,
+    val pairingToken: String? = null,
+    val expiresAt: Long? = null,
     val qrData: String
 )

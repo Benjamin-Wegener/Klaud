@@ -13,20 +13,25 @@ class QrPairingTest {
 
     @Test(timeout = 10000)
     fun encodeDecodeRoundtrip() {
-        val onion = "v2c7ujq6mc6qqmxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.onion"
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val onion = "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcd.onion"
         val port = 12345
         val name = "TestDevice"
         val hash = "abc123hash"
+        val token = PairingTokenManager.getOrCreateActiveToken(context)
         
-        val bitmap = QRCodeUtils.generateTorDeviceQRCode(onion, port, name, hash)
+        val bitmap = QRCodeUtils.generateTorDeviceQRCode(
+            onionAddress = onion,
+            port = port,
+            deviceName = name,
+            pubKeyHash = hash,
+            pairingToken = token.token,
+            expiresAt = token.expiresAt
+        )
         assertNotNull(bitmap)
-        
-        // We can't easily decode the bitmap here without a lot of setup, 
-        // but we can test the data string generation if we had access to the private method or recreated it.
-        // For now, let's test the parser with a known valid string.
-        
+
         val timestamp = System.currentTimeMillis()
-        val qrData = "KLAUD_V1:$onion:$port:$name:$timestamp:$hash"
+        val qrData = "KLAUD_V2:$onion:$port:$name:$timestamp:$hash:${token.token}:${token.expiresAt}"
         val parsed = QRCodeUtils.parseTorDeviceQRData(qrData)
         
         assertNotNull(parsed)
@@ -34,6 +39,8 @@ class QrPairingTest {
         assertEquals(port, parsed?.port)
         assertEquals(name, parsed?.deviceName)
         assertEquals(hash, parsed?.pubKeyHash)
+        assertEquals(token.token, parsed?.pairingToken)
+        assertEquals(token.expiresAt, parsed?.expiresAt)
     }
 
     @Test(timeout = 10000)

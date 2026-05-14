@@ -48,6 +48,7 @@ class FileSyncService : Service() {
         private const val FRAME_TYPE_PEER_EXCHANGE_REQ: Byte = 0x04
         private const val FRAME_TYPE_PEER_EXCHANGE_RES: Byte = 0x05
         private const val FRAME_TYPE_DELETE: Byte = 0x06
+        private const val FRAME_TYPE_PAIRING_REQ: Byte = 0x07
 
         private val gson = Gson()
 
@@ -277,14 +278,50 @@ class FileSyncService : Service() {
             var session: CryptoSession? = null
 
             try {
-                val (cryptoSession, senderOnion) = HandshakeHandler.performServerHandshake(rawSocket)
-                session = cryptoSession
+                val handshake = HandshakeHandler.performServerHandshake(rawSocket)
+                session = handshake.session
+                var senderOnion = handshake.peerOnion
+                var isKnownPeer = senderOnion != null
 
                 while (true) {
                     val firstFrame = session.receiveFrame()
                     if (firstFrame.isEmpty()) break
 
+                    if (!isKnownPeer) {
+                        if (firstFrame[0] != FRAME_TYPE_PAIRING_REQ) {
+                            session.sendFrame("ERROR_UNPAIRED".toByteArray())
+                            break
+                        }
+
+                        val pairingRequest = parsePairingRequest(firstFrame)
+                        val accepted = pairingRequest != null &&
+                            pairingRequest.publicKeyHash == handshake.peerPublicKeyHash &&
+                            PairingTokenManager.consume(this@FileSyncService, pairingRequest.token) &&
+                            NetworkManager.isValidOnionAddress(pairingRequest.onionAddress) &&
+                            pairingRequest.port in 1..65535 &&
+                            DeviceManager.addDevice(
+                                pairingRequest.onionAddress,
+                                pairingRequest.port,
+                                pairingRequest.deviceName,
+                                pairingRequest.publicKeyHash
+                            )
+
+                        if (!accepted) {
+                            session.sendFrame("ERROR_PAIRING_REJECTED".toByteArray())
+                            break
+                        }
+
+                        senderOnion = pairingRequest!!.onionAddress
+                        isKnownPeer = true
+                        session.sendFrame("OK".toByteArray())
+                        continue
+                    }
+
                     when (val type = firstFrame[0]) {
+                        FRAME_TYPE_PAIRING_REQ -> {
+                            session.sendFrame("OK".toByteArray())
+                        }
+
                         FRAME_TYPE_PEER_EXCHANGE_REQ -> {
                             val remotePeersJson = String(firstFrame, 1, firstFrame.size - 1)
                             val typeToken = object : TypeToken<List<PeerInfo>>() {}.type
@@ -378,6 +415,15 @@ class FileSyncService : Service() {
                 wl?.release()
                 transferSemaphore.release()
             }
+        }
+    }
+
+    private fun parsePairingRequest(frame: ByteArray): PairingRequest? {
+        return try {
+            val jsonPayload = String(frame, 1, frame.size - 1)
+            gson.fromJson(jsonPayload, PairingRequest::class.java)
+        } catch (e: Exception) {
+            null
         }
     }
 

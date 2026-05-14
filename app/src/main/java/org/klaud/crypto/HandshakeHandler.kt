@@ -15,8 +15,15 @@ object HandshakeHandler {
     private const val TAG = "HandshakeHandler"
     private const val HKDF_SALT = "klaud-v1"
     private const val SESSION_KEY_LENGTH = 32
+    private const val MAX_HANDSHAKE_FRAME_BYTES = 4096
 
-    fun performServerHandshake(socket: Socket): Pair<CryptoSession, String?> {
+    data class ServerHandshakeResult(
+        val session: CryptoSession,
+        val peerOnion: String?,
+        val peerPublicKeyHash: String
+    )
+
+    fun performServerHandshake(socket: Socket): ServerHandshakeResult {
         val out = DataOutputStream(socket.getOutputStream())
         val inp = DataInputStream(socket.getInputStream())
 
@@ -37,7 +44,7 @@ object HandshakeHandler {
             writeFrame(out, ctBA)
 
             val sessionKey = deriveSessionKey(ssAB, ssBA)
-            return Pair(CryptoSession(socket, sessionKey), peerOnion)
+            return ServerHandshakeResult(CryptoSession(socket, sessionKey), peerOnion, hashB)
         } catch (e: Exception) {
             try { socket.close() } catch (ex: IOException) {}
             throw e
@@ -89,6 +96,9 @@ object HandshakeHandler {
 
     private fun readFrame(inp: DataInputStream): ByteArray {
         val length = inp.readInt()
+        if (length <= 0 || length > MAX_HANDSHAKE_FRAME_BYTES) {
+            throw IOException("Invalid handshake frame length: $length")
+        }
         val data = ByteArray(length)
         inp.readFully(data)
         return data

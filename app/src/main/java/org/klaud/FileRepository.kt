@@ -49,11 +49,14 @@ object FileRepository {
     }
 
     fun getRelativePath(file: File): String {
-        return file.absolutePath.removePrefix(syncRoot.absolutePath).trimStart(File.separatorChar)
+        val root = syncRoot.canonicalFile
+        val target = file.canonicalFile
+        require(isInsideRoot(root, target)) { "File is outside Klaud sync root" }
+        return target.absolutePath.removePrefix(root.absolutePath).trimStart(File.separatorChar)
     }
 
     fun getFileByRelativePath(relativePath: String): File {
-        return File(syncRoot, relativePath)
+        return resolveWithinSyncRoot(relativePath)
     }
 
     fun computeSha256Cached(file: File): String? {
@@ -80,13 +83,17 @@ object FileRepository {
     }
 
     fun createFile(relativePath: String): File {
-        val file = File(syncRoot, relativePath)
+        val file = resolveWithinSyncRoot(relativePath)
         file.parentFile?.mkdirs()
         return file
     }
 
     fun deleteFile(relativePath: String): Boolean {
-        val file = File(syncRoot, relativePath)
+        val file = try {
+            resolveWithinSyncRoot(relativePath)
+        } catch (e: SecurityException) {
+            return false
+        }
         return if (file.isDirectory) {
             file.deleteRecursively()
         } else {
@@ -95,13 +102,14 @@ object FileRepository {
     }
 
     fun renameFile(relativePath: String, newName: String): Boolean {
-        val file = File(syncRoot, relativePath)
-        val newFile = File(file.parentFile, newName)
+        val file = resolveWithinSyncRoot(relativePath)
+        val parent = file.parentFile ?: return false
+        val newFile = resolveWithinSyncRoot(File(getRelativePath(parent), newName).path)
         return file.renameTo(newFile)
     }
 
     fun createFolder(relativePath: String): Boolean {
-        val folder = File(syncRoot, relativePath)
+        val folder = resolveWithinSyncRoot(relativePath)
         return folder.mkdirs()
     }
 
@@ -127,5 +135,22 @@ object FileRepository {
 
     fun clearSyncStatus() {
         syncStatus.clear()
+    }
+
+    private fun resolveWithinSyncRoot(relativePath: String): File {
+        if (relativePath.isBlank() || File(relativePath).isAbsolute || relativePath.indexOf('\u0000') >= 0) {
+            throw SecurityException("Invalid relative path")
+        }
+
+        val root = syncRoot.canonicalFile
+        val target = File(root, relativePath).canonicalFile
+        if (!isInsideRoot(root, target)) {
+            throw SecurityException("Path escapes Klaud sync root: $relativePath")
+        }
+        return target
+    }
+
+    private fun isInsideRoot(root: File, target: File): Boolean {
+        return target == root || target.absolutePath.startsWith(root.absolutePath + File.separator)
     }
 }

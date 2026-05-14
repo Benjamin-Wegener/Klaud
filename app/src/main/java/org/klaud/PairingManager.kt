@@ -26,7 +26,8 @@ class PairingManager private constructor(private val context: Context) {
                 data.onionAddress,
                 data.port,
                 data.pubKeyHash ?: "",
-                data.deviceName
+                data.deviceName,
+                data.pairingToken ?: ""
             )
         }
     }
