@@ -21,6 +21,7 @@ import com.journeyapps.barcodescanner.BarcodeResult
 import com.journeyapps.barcodescanner.CompoundBarcodeView
 import kotlinx.coroutines.*
 import org.klaud.NetworkManager
+import org.klaud.PairingTokenManager
 import org.klaud.R
 import org.klaud.SyncManager
 import org.klaud.crypto.KyberKeyManager
@@ -115,11 +116,14 @@ class QRScannerActivity : AppCompatActivity() {
                 
                 if (onionAddress != null && onionPort != null) {
                     val deviceName = android.os.Build.MODEL ?: "Android Device"
+                    val pairingToken = PairingTokenManager.getOrCreateActiveToken(this@QRScannerActivity)
                     val qrBitmap = QRCodeUtils.generateTorDeviceQRCode(
                         onionAddress = onionAddress,
                         port = onionPort,
                         deviceName = deviceName,
                         pubKeyHash = pubKeyHash,
+                        pairingToken = pairingToken.token,
+                        expiresAt = pairingToken.expiresAt,
                         size = 512
                     )
                     
@@ -148,7 +152,8 @@ class QRScannerActivity : AppCompatActivity() {
                     torDeviceData.onionAddress, 
                     torDeviceData.port, 
                     torDeviceData.deviceName,
-                    torDeviceData.pubKeyHash ?: ""
+                    torDeviceData.pubKeyHash ?: "",
+                    torDeviceData.pairingToken ?: ""
                 )
         } else {
             Toast.makeText(this, "Invalid Klaud QR code", Toast.LENGTH_SHORT).show()
@@ -156,7 +161,13 @@ class QRScannerActivity : AppCompatActivity() {
         }
     }
 
-    private fun startPairingHandshake(onionAddress: String, port: Int, deviceName: String, publicKeyHash: String) {
+    private fun startPairingHandshake(
+        onionAddress: String,
+        port: Int,
+        deviceName: String,
+        publicKeyHash: String,
+        pairingToken: String
+    ) {
         pairingOverlay.visibility = View.VISIBLE
         pairingProgress.visibility = View.VISIBLE
         pairingStatusText.text = "Connecting to $deviceName..."
@@ -172,7 +183,8 @@ class QRScannerActivity : AppCompatActivity() {
                             onionAddress = onionAddress,
                             port = port,
                             expectedPubKeyHash = publicKeyHash,
-                            deviceName = deviceName
+                            deviceName = deviceName,
+                            pairingToken = pairingToken
                         )
                     } ?: PairingResult.Timeout
                 } catch (e: Exception) {

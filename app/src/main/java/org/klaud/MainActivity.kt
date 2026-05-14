@@ -56,6 +56,8 @@ class MainActivity : AppCompatActivity() {
                                 deviceName = "Remote Device",
                                 timestamp = System.currentTimeMillis(),
                                 pubKeyHash = map["key"] as String,
+                                pairingToken = map["token"] as? String,
+                                expiresAt = (map["expiresAt"] as? Double)?.toLong(),
                                 qrData = raw
                             )
                         } catch (e: Exception) {
