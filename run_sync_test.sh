@@ -1,5 +1,5 @@
 #!/bin/bash
-ADB=/home/user/Android/Sdk/platform-tools/adb
+ADB="${ADB:-adb}"
 EMU1=emulator-5554
 EMU2=emulator-5556
 
