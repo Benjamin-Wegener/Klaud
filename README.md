@@ -60,6 +60,16 @@ This means:
 
 ---
 
+## 🛠 Build
+
+```bash
+./gradlew :app:assembleDebug
+# APK: app/build/outputs/apk/debug/app-debug.apk
+```
+
+Requires JDK 17+ and the Android SDK (compileSdk 35). Install on a connected device with
+`adb install -r app/build/outputs/apk/debug/app-debug.apk`.
+
 ## 📄 License
 
 MIT License — see [LICENSE](LICENSE)
